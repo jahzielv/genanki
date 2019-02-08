@@ -8,64 +8,92 @@ import zipfile
 from .apkg_schema import APKG_SCHEMA
 from .deck import Deck
 
+
 class Package:
-  def __init__(self, deck_or_decks=None, media_files=None):
-    if isinstance(deck_or_decks, Deck):
-      self.decks = [deck_or_decks]
-    else:
-      self.decks = deck_or_decks
+    def __init__(self, deck_or_decks=None, media_files=None):
+        if isinstance(deck_or_decks, Deck):
+            self.decks = [deck_or_decks]
+        else:
+            self.decks = deck_or_decks
 
-    self.media_files = media_files or []
+        self.media_files = media_files or []
 
-  def write_to_file(self, file):
-    dbfile, dbfilename = tempfile.mkstemp()
-    os.close(dbfile)
+    def write_to_file(self, file):
+        dbfile, dbfilename = tempfile.mkstemp()
+        os.close(dbfile)
 
-    conn = sqlite3.connect(dbfilename)
-    cursor = conn.cursor()
+        conn = sqlite3.connect(dbfilename)
+        cursor = conn.cursor()
 
-    now_ts = int(time.time())
-    self.write_to_db(cursor, now_ts)
+        now_ts = int(time.time())
+        self.write_to_db(cursor, now_ts)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
-    with zipfile.ZipFile(file, 'w') as outzip:
-      outzip.write(dbfilename, 'collection.anki2')
+        with zipfile.ZipFile(file, 'w') as outzip:
+            outzip.write(dbfilename, 'collection.anki2')
 
-      media_json = dict(enumerate(self.media_files))
-      outzip.writestr('media', json.dumps(media_json))
+            media_json = dict(enumerate(self.media_files))
+            outzip.writestr('media', json.dumps(media_json))
 
-      for i, f in media_json.items():
-        outzip.write(f, str(i))
+            for i, f in media_json.items():
 
-  def write_to_db(self, cursor, now_ts):
-    cursor.executescript(APKG_SCHEMA)
+                outzip.write(f, str(i))
 
-    for deck in self.decks:
-      deck.write_to_db(cursor, now_ts)
+    def write_to_file_media_bytes(self, file):
+        dbfile, dbfilename = tempfile.mkstemp()
+        os.close(dbfile)
 
-  def write_to_collection_from_addon(self):
-    """
-    Write to local collection. *Only usable when running inside an Anki addon!* Only tested on Anki 2.1.
+        conn = sqlite3.connect(dbfilename)
+        cursor = conn.cursor()
 
-    This writes to a temporary file and then calls the code that Anki uses to import packages.
+        now_ts = int(time.time())
+        self.write_to_db(cursor, now_ts)
 
-    Note: the caller may want to use mw.checkpoint and mw.reset as follows:
+        conn.commit()
+        conn.close()
 
-      # creates a menu item called "Undo Add Notes From MyAddon" after this runs
-      mw.checkpoint('Add Notes From MyAddon')
-      # run import
-      my_package.write_to_collection_from_addon()
-      # refreshes main view so new deck is visible
-      mw.reset()
+        with zipfile.ZipFile(file, 'w') as outzip:
+            outzip.write(dbfilename, 'collection.anki2')
 
-    Tip: if your deck has the same name and ID as an existing deck, then the notes will get placed in that deck rather
-    than a new deck being created.
-    """
-    from aqt import mw  # main window
-    from anki.importing.apkg import AnkiPackageImporter
+            media_json = dict()
+            index = 0
+            for mediaFile in self.media_files:
+                media_json[index] = mediaFile[0]
+                index += 1
+            outzip.writestr('media', json.dumps(media_json))
 
-    tmpfilename = tempfile.NamedTemporaryFile(delete=False).name
-    self.write_to_file(tmpfilename)
-    AnkiPackageImporter(mw.col, tmpfilename).run()
+            for i, f in media_json.items():
+                outzip.writestr(str(i), self.media_files[i][1])
+
+    def write_to_db(self, cursor, now_ts):
+        cursor.executescript(APKG_SCHEMA)
+
+        for deck in self.decks:
+            deck.write_to_db(cursor, now_ts)
+
+    def write_to_collection_from_addon(self):
+        """
+        Write to local collection. *Only usable when running inside an Anki addon!* Only tested on Anki 2.1.
+
+        This writes to a temporary file and then calls the code that Anki uses to import packages.
+
+        Note: the caller may want to use mw.checkpoint and mw.reset as follows:
+
+          # creates a menu item called "Undo Add Notes From MyAddon" after this runs
+          mw.checkpoint('Add Notes From MyAddon')
+          # run import
+          my_package.write_to_collection_from_addon()
+          # refreshes main view so new deck is visible
+          mw.reset()
+
+        Tip: if your deck has the same name and ID as an existing deck, then the notes will get placed in that deck rather
+        than a new deck being created.
+        """
+        from aqt import mw  # main window
+        from anki.importing.apkg import AnkiPackageImporter
+
+        tmpfilename = tempfile.NamedTemporaryFile(delete=False).name
+        self.write_to_file(tmpfilename)
+        AnkiPackageImporter(mw.col, tmpfilename).run()
